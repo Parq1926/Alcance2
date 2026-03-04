@@ -54,19 +54,24 @@ public class ServicioAutenticacion : IServicioAutenticacion
                 return resultado;
             }
 
-            // Desencriptar credenciales
+            // Desencriptar credenciales recibidas
             string usuario = Encriptacion.Desencriptar(credenciales.UsuarioEncriptado);
             string contrasena = Encriptacion.Desencriptar(credenciales.ContrasenaEncriptada);
 
-            Debug.WriteLine("[Servicio] Validando login para: " + usuario);
+            Debug.WriteLine("[Servicio] Validando login para usuario (desencriptado): " + usuario);
 
-            // Buscar usuario en MongoDB
-            var filter = Builders<UsuarioMongo>.Filter.Eq(u => u.Usuario, usuario);
+            // ✅ ENCRIPTAR EL USUARIO PARA BUSCARLO EN LA BD
+            string usuarioEncriptado = Encriptacion.Encriptar(usuario);
+            Debug.WriteLine("[Servicio] Buscando usuario encriptado: " + usuarioEncriptado);
+
+            // ✅ Buscar usuario en MongoDB por usuario ENCRIPTADO
+            var filter = Builders<UsuarioMongo>.Filter.Eq(u => u.Usuario, usuarioEncriptado);
             var usuarioEncontrado = _coleccionUsuarios.Find(filter).FirstOrDefault();
 
             // Verificar si el usuario existe
             if (usuarioEncontrado == null)
             {
+                Debug.WriteLine("[Servicio] Usuario no encontrado en BD");
                 resultado.Resultado = false;
                 resultado.Mensaje = "Usuario y/o contraseña incorrectos";
                 return resultado;
@@ -76,7 +81,7 @@ public class ServicioAutenticacion : IServicioAutenticacion
             string contrasenaAlmacenada = Encriptacion.Desencriptar(usuarioEncontrado.Contrasena);
 
             Debug.WriteLine("[Servicio] Contraseña ingresada: " + contrasena);
-            Debug.WriteLine("[Servicio] Contraseña almacenada: " + contrasenaAlmacenada);
+            Debug.WriteLine("[Servicio] Contraseña almacenada (desencriptada): " + contrasenaAlmacenada);
 
             // Verificar contraseña y estado
             if (contrasenaAlmacenada == contrasena)
@@ -87,7 +92,7 @@ public class ServicioAutenticacion : IServicioAutenticacion
                     resultado.Mensaje = "Exitoso";
                     resultado.TipoUsuario = usuarioEncontrado.Tipo;
 
-                    Debug.WriteLine("[Servicio] Login exitoso: " + usuario + ", Tipo: " + usuarioEncontrado.Tipo);
+                    Debug.WriteLine("[Servicio] Login exitoso para usuario");
                 }
                 else
                 {
@@ -105,7 +110,7 @@ public class ServicioAutenticacion : IServicioAutenticacion
         {
             resultado.Resultado = false;
             resultado.Mensaje = "Error en el servicio";
-            Debug.WriteLine("[Servicio] Error: " + ex.Message);
+            Debug.WriteLine("[Servicio] Error en ValidarLogin: " + ex.Message);
         }
 
         return resultado;
@@ -127,8 +132,16 @@ public class ServicioAutenticacion : IServicioAutenticacion
                 return resultado;
             }
 
-            // Validar que el usuario no exista
-            var filter = Builders<UsuarioMongo>.Filter.Eq(u => u.Usuario, usuario.Usuario);
+            // ✅ ENCRIPTAR EL USUARIO Y LA CONTRASEÑA ANTES DE GUARDAR
+            string usuarioEncriptado = Encriptacion.Encriptar(usuario.Usuario);
+            string contrasenaEncriptada = Encriptacion.Encriptar(usuario.Contrasena);
+
+            Debug.WriteLine("[Servicio] Usuario original: " + usuario.Usuario);
+            Debug.WriteLine("[Servicio] Usuario encriptado: " + usuarioEncriptado);
+            Debug.WriteLine("[Servicio] Contraseña encriptada: " + contrasenaEncriptada);
+
+            // ✅ Validar que el usuario (encriptado) no exista
+            var filter = Builders<UsuarioMongo>.Filter.Eq(u => u.Usuario, usuarioEncriptado);
             var existe = _coleccionUsuarios.Find(filter).Any();
 
             if (existe)
@@ -138,7 +151,7 @@ public class ServicioAutenticacion : IServicioAutenticacion
                 return resultado;
             }
 
-            // Validar que el email no exista
+            // Validar que el email no exista (el email NO se encripta para poder buscarlo)
             if (!string.IsNullOrEmpty(usuario.Email))
             {
                 filter = Builders<UsuarioMongo>.Filter.Eq(u => u.Email, usuario.Email);
@@ -152,11 +165,7 @@ public class ServicioAutenticacion : IServicioAutenticacion
                 }
             }
 
-            // ENCRIPTAR LA CONTRASEÑA ANTES DE GUARDARLA
-            string contrasenaEncriptada = Encriptacion.Encriptar(usuario.Contrasena);
-            Debug.WriteLine("[Servicio] Contraseña encriptada: " + contrasenaEncriptada);
-
-            // Crear el documento para MongoDB
+            // ✅ Crear el documento para MongoDB con USUARIO Y CONTRASEÑA ENCRIPTADOS
             var nuevoUsuario = new UsuarioMongo
             {
                 Identificacion = usuario.Identificacion ?? "",
@@ -164,8 +173,8 @@ public class ServicioAutenticacion : IServicioAutenticacion
                 PrimerApellido = usuario.PrimerApellido ?? "",
                 SegundoApellido = usuario.SegundoApellido ?? "",
                 Email = usuario.Email ?? "",
-                Usuario = usuario.Usuario,
-                Contrasena = contrasenaEncriptada,
+                Usuario = usuarioEncriptado,        // ✅ USUARIO ENCRIPTADO
+                Contrasena = contrasenaEncriptada,  // ✅ CONTRASEÑA ENCRIPTADA
                 Estado = "activo",
                 Tipo = usuario.Tipo
             };
@@ -173,7 +182,7 @@ public class ServicioAutenticacion : IServicioAutenticacion
             // Guardar en MongoDB
             _coleccionUsuarios.InsertOne(nuevoUsuario);
 
-            Debug.WriteLine("[Servicio] Usuario registrado exitosamente: " + usuario.Usuario);
+            Debug.WriteLine("[Servicio] Usuario registrado exitosamente");
 
             resultado.Exitoso = true;
             resultado.Mensaje = "Usuario registrado exitosamente";
